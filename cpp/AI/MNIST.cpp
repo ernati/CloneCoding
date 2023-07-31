@@ -142,13 +142,103 @@ void MatPrint(std::vector<cv::Mat>& trainingVec, std::vector<cv::uint8_t>& label
 //	return test1 * test2;
 //}
 
+class Softmax {
+public:	
+
+	Softmax() {
+
+	}
+
+	
+	Eigen::MatrixXd forward(Eigen::MatrixXd& z) {
+		double sum = 0;
+		Eigen::MatrixXd a;
+		a = Eigen::MatrixXd(z.rows(), z.cols());
+		double max = z.maxCoeff();
+
+		for (int i = 0; i < z.rows(); i++) {
+			for (int j = 0; j < z.cols(); j++) {
+				sum += exp(z(i, j) - max ); 
+			}
+		}
+		for (int i = 0; i < a.rows(); i++) {
+			for (int j = 0; j < a.cols(); j++) {
+				a(i, j) = exp(z(i, j) - max) / sum;
+			}
+		}
+
+		cout << "==============softmax================" << endl;
+		cout << "z is " << endl << z << endl;
+		cout << "a is " << endl << a << endl;
+		cout << "=====================================" << endl;
+
+		return a;
+	}
+	
+	//one-hot encoding vector - a5
+	Eigen::MatrixXd backward(Eigen::MatrixXd& a, Eigen::MatrixXd& label) {
+		double sum = 0;
+		Eigen::MatrixXd z = label - a;
+		
+		return z;
+	}
+
+};
+
+class ReLU {
+public:
+
+	ReLU() {
+
+	}
+
+	Eigen::MatrixXd forward( Eigen::MatrixXd& z ) {
+		Eigen::MatrixXd a;
+		a = Eigen::MatrixXd(z.rows(), z.cols());
+		for (int i = 0; i < z.rows(); i++) {
+			for (int j = 0; j < z.cols(); j++) {
+				if (z(i, j) < 0) {
+					a(i, j) = 0;
+				}
+				else {
+					a(i, j) = z(i, j);
+				}
+			}
+		}
+
+		return a;
+	}
+
+	Eigen::MatrixXd backward(Eigen::MatrixXd& z) {
+		Eigen::MatrixXd dz;
+		dz = Eigen::MatrixXd(z.rows(), z.cols());
+		for (int i = 0; i < z.rows(); i++) {
+			for (int j = 0; j < z.cols(); j++) {
+				if (z(i, j) < 0) {
+					dz(i, j) = 0;
+				}
+				else {
+					dz(i, j) = 1;
+				}
+			}
+		}
+
+		return dz;
+	}
+
+};
+
 class MLP {
 public:
 	//W,b 선언 및 초기화
 	Eigen::MatrixXd W1, W2, W3, W4, W5;
 	Eigen::VectorXd b1, b2, b3, b4, b5;
+	ReLU relu;
+	Softmax softmax;
 
 	MLP() {
+		relu = ReLU();
+
 		W1 = Eigen::MatrixXd(512, 784);
 		W2 = Eigen::MatrixXd(256, 512);
 		W3 = Eigen::MatrixXd(128, 256);
@@ -220,7 +310,7 @@ public:
 		}
 	}
 
-	void ReLU( Eigen::MatrixXd& a ) {
+	/*void ReLU( Eigen::MatrixXd& a ) {
 		for (int i = 0; i < a.rows(); i++) {
 			for (int j = 0; j < a.cols(); j++) {
 				if (a(i, j) < 0) {
@@ -228,40 +318,40 @@ public:
 				}
 			}
 		}
-	}
+	}*/
 
 	
-	//오호... 이게 맞는 것 같군
-	void softmax(Eigen::MatrixXd& a) {
-		double sum = 0;
-		for (int i = 0; i < a.rows(); i++) {
-			for (int j = 0; j < a.cols(); j++) {
-				sum += exp(a(i, j));
-			}
-		}
-		for (int i = 0; i < a.rows(); i++) {
-			for (int j = 0; j < a.cols(); j++) {
-				a(i, j) = exp(a(i, j)) / sum;
-			}
-		}
-	}
+	////오호... 이게 맞는 것 같군
+	//void softmax(Eigen::MatrixXd& a) {
+	//	double sum = 0;
+	//	for (int i = 0; i < a.rows(); i++) {
+	//		for (int j = 0; j < a.cols(); j++) {
+	//			sum += exp(a(i, j));
+	//		}
+	//	}
+	//	for (int i = 0; i < a.rows(); i++) {
+	//		for (int j = 0; j < a.cols(); j++) {
+	//			a(i, j) = exp(a(i, j)) / sum;
+	//		}
+	//	}
+	//}
 
 	//return a6, w1,w2,w3,w4,w5,b1,b2,b3,b4,b5
 	std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-	Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> predict(Eigen::VectorXd x) {
+	Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> predict(Eigen::VectorXd x) {
 
-		Eigen::MatrixXd a1, a2, a3, a4, a5, a6;
+		Eigen::MatrixXd z1, z2, z3, z4, z5, a1, a2, a3, a4, a5;
 		double digit;
-		a1 = W1 * x + b1;
-		ReLU(a1);
-		a2 = W2 * a1 + b2;
-		ReLU(a2);
-		a3 = W3 * a2 + b3;
-		ReLU(a3);
-		a4 = W4 * a3 + b4;
-		ReLU(a4);
-		a5 = W5 * a4 + b5;
-		softmax(a5);
+		z1 = W1 * x + b1;
+		a1 = relu.forward(z1);
+		z2 = W2 * a1 + b2;
+		a2 = relu.forward(z2);
+		z3 = W3 * a2 + b3;
+		a3 = relu.forward(z3);
+		z4 = W4 * a3 + b4;
+		a4 = relu.forward(z4);
+		z5 = W5 * a4 + b5;
+		a5 = softmax.forward(z5);
 
 		digit = 0;
 		double max = a5(0);
@@ -278,9 +368,13 @@ public:
 		cout << a4.rows() << " " << a4.cols() << endl;
 		cout << a5.rows() << " " << a5.cols() << endl;
 		cout << a5 << endl;
-		cout << digit << endl;*/
+		cout << y_hat << endl;*/
 
-		return std::make_tuple(digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5);
+		/*cout << "=========================" << endl;
+		cout << " z4 is " << z4 << endl;
+		cout << "=========================" << endl;*/
+
+		return std::make_tuple(digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5,a5,max);
 	}
 
 };
@@ -329,21 +423,15 @@ double train(Eigen::MatrixXd X, Eigen::VectorXd Y, MLP& model, float lr, int N) 
 
 			//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
 			std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-				Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> predict = model.predict(x);
+				Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict = model.predict(x);
 			//digit
 			double digit = std::get<0>(predict);
+			double y_hat = std::get<12>(predict);
 			Eigen::VectorXd one_vector_b5 = Eigen::VectorXd(10);
 			one_vector_b5.setOnes();
 
-
-			/*if (Y(i) == 1) {
-				cost -= log(a2);
-			}
-			else {
-				cost -= log(1 - a2);
-			}*/
-
-			cost -= Y(i) * log(Y(i)) - (1 - digit) * log(1 - digit);
+			//loss 함수
+			cost -= 1 * log(y_hat);
 
 			db5 = db5 + std::get<10>(predict) - one_vector_b5;
 			dW5 = dW5 + (digit - Y(i)) * std::get<9>(predict) * std::get<8>(predict) * std::get<7>(predict) * std::get<6>(predict).transpose();
@@ -377,7 +465,7 @@ double train(Eigen::MatrixXd X, Eigen::VectorXd Y, MLP& model, float lr, int N) 
 int main() {
     std::cout << "Hello OpenCV" << CV_VERSION << std::endl;
 
-	int DataNum = 60000;
+	int DataNum = 300;
 
     //read MNIST iamge into OpenCV Mat vector
     std::vector<cv::Mat> trainingVec;
@@ -432,28 +520,36 @@ int main() {
 	MLP model = MLP();
 
 	std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd> result = model.predict(X.row(0));
+		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> result = model.predict(X.row(44));
 
-	float cost = 0.0;
+	//float cost = 0.0;
 
-	cout << endl << "MNIST to Eigen Done" << endl;
+	//cout << endl << "MNIST to Eigen Done" << endl;
 
-	cost = train(X, Y, model, 0.1, DataNum);
+	//cost = train(X, Y, model, 0.1, DataNum);
+	///*cost = train(X, Y, model, 0.1, DataNum);
+	//cost = train(X, Y, model, 0.1, DataNum);*/
 
-	cout << endl << "Training Done" << endl;
+	//cout << endl << "Training Done" << endl;
 
 
-	cout << " test " << endl;
-	cout << X.row(57) << endl;
-	cout << get<0>(model.predict(X.row(57))) << endl;
+	//cout << " test " << endl;
+	//cout << X.row(4728) << endl;
+	//cout << get<0>(model.predict(X.row(4728))) << endl;
 
-	//cout << get<0>(result) << endl; //digit
+
+
+	cout << get<0>(result) << endl; //y_hat
+	cout << "==============" << endl;
+	cout << get<10>(result) << endl; //b5
+	cout << "==============" << endl;
+	cout << get<5>(result) << endl; //W5
+	cout << "==============" << endl;
+	cout << get<11>(result) << endl; //a5
 	//cout << "==============" << endl;
-	//cout << get<1>(result) << endl; //W1
+	//cout << get<11>(result)(8,0) << endl; //a5
 	//cout << "==============" << endl;
-	//cout << get<8>(result) << endl; //b3
-	//cout << "==============" << endl;
-	//cout << get<8>(result).rows() << endl; //b4
+	//cout << get<11>(result)(8) << endl; //a5
 
 	/*Eigen::MatrixXd test1;
 	test1 = Eigen::MatrixXd(3, 2);

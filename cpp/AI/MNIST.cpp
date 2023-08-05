@@ -1,6 +1,6 @@
 #pragma once
 
-#include "opencv2/opencv.hpp"
+#include <opencv2/opencv.hpp>
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -13,11 +13,14 @@
 #include <random>
 #include <vector>
 #include <tgmath.h>
+#include <thread>
+#include <mutex>
+
 
 using namespace std;
 using namespace cv;
 
-
+//std::mutex mtx;
 
 int ReverseInt(int i)
 {
@@ -151,32 +154,51 @@ public:
 
 	
 	Eigen::MatrixXd forward(Eigen::MatrixXd& z) {
+		//cout << "==============softmax================" << endl;
 		double sum = 0;
 		Eigen::MatrixXd a;
 		a = Eigen::MatrixXd(z.rows(), z.cols());
-		double max = z.maxCoeff();
+		/*double max = z.maxCoeff();*/
 
+		//opencv의 normalize를 사용하는건... 모르겠다...
+
+		//a에다가 z 깊은 복사
 		for (int i = 0; i < z.rows(); i++) {
-			for (int j = 0; j < z.cols(); j++) {
-				sum += exp(z(i, j) - max ); 
-			}
+			for(int j=0; j<z.cols(); j++)
+				a(i, j) = z(i, j);
 		}
+
+		a.normalize();
+
+		//cout << "normalize 직후 a는" << endl << a << endl;
+
+		//normalization 한 array를 exp해서 a에 담음
+
 		for (int i = 0; i < a.rows(); i++) {
 			for (int j = 0; j < a.cols(); j++) {
-				a(i, j) = exp(z(i, j) - max) / sum;
+				sum += exp( a(i, j) ); 
 			}
 		}
 
-		cout << "==============softmax================" << endl;
-		cout << "z is " << endl << z << endl;
-		cout << "a is " << endl << a << endl;
-		cout << "=====================================" << endl;
+		//cout << " sum은 " <<	 sum << endl;
+
+		for (int i = 0; i < a.rows(); i++) {
+			for (int j = 0; j < a.cols(); j++) {
+				a(i, j) = exp( a(i, j) ) / sum;
+			}
+		}
+
+		//normalization
+
+
+		//cout << "a is " << endl << a << endl;
+		//cout << "=====================================" << endl;
 
 		return a;
 	}
 	
 	//one-hot encoding vector - a5
-	Eigen::MatrixXd backward(Eigen::MatrixXd& a, Eigen::MatrixXd& label) {
+	Eigen::MatrixXd backward(Eigen::MatrixXd& a, Eigen::VectorXd& label) {
 		double sum = 0;
 		Eigen::MatrixXd z = label - a;
 		
@@ -209,21 +231,17 @@ public:
 		return a;
 	}
 
-	Eigen::MatrixXd backward(Eigen::MatrixXd& z) {
-		Eigen::MatrixXd dz;
-		dz = Eigen::MatrixXd(z.rows(), z.cols());
+	void backward(Eigen::MatrixXd& z) {
 		for (int i = 0; i < z.rows(); i++) {
 			for (int j = 0; j < z.cols(); j++) {
 				if (z(i, j) < 0) {
-					dz(i, j) = 0;
+					z(i, j) *= 0;
 				}
 				else {
-					dz(i, j) = 1;
+					z(i, j) *= 1;
 				}
 			}
 		}
-
-		return dz;
 	}
 
 };
@@ -233,6 +251,17 @@ public:
 	//W,b 선언 및 초기화
 	Eigen::MatrixXd W1, W2, W3, W4, W5;
 	Eigen::VectorXd b1, b2, b3, b4, b5;
+	// backward 용 값 저장 matrix
+	Eigen::MatrixXd a1, a2, a3, a4, a5;
+
+	//train용 변수들
+	//dW,db 선언 및 초기화
+	Eigen::MatrixXd dW1, dW2, dW3, dW4, dW5;
+	Eigen::VectorXd db1, db2, db3, db4, db5;
+
+	//cost 선언
+	double cost;
+
 	ReLU relu;
 	Softmax softmax;
 
@@ -263,6 +292,30 @@ public:
 		b4.setZero();
 		b5.setZero();
 
+		dW1 = Eigen::MatrixXd(512, 784);
+		dW2 = Eigen::MatrixXd(256, 512);
+		dW3 = Eigen::MatrixXd(128, 256);
+		dW4 = Eigen::MatrixXd(64, 128);
+		dW5 = Eigen::MatrixXd(10, 64);
+
+		db1 = Eigen::VectorXd(512);
+		db2 = Eigen::VectorXd(256);
+		db3 = Eigen::VectorXd(128);
+		db4 = Eigen::VectorXd(64);
+		db5 = Eigen::VectorXd(10);
+
+		//zero로 초기화하기
+		dW1.setZero();
+		dW2.setZero();
+		dW3.setZero();
+		dW4.setZero();
+		dW5.setZero();
+		db1.setZero();
+		db2.setZero();
+		db3.setZero();
+		db4.setZero();
+		db5.setZero();
+
 		//random값 더해주기
 		//난수 준비
 		std::random_device rd;
@@ -272,76 +325,64 @@ public:
 		//W1에 random값들 더해주기
 		for (int i = 0; i < 784; i++) {
 			for (int j = 0; j < 512; j++) {
-				W1(i,j) = W1(i,j) + ((float)dist(gen) - 500) / 1000.0;
+				W1(i, j) = W1(i, j) + ((double)dist(gen) - 500) / 1000.0;
+				dW1(i, j) = dW1(i, j) + ((double)dist(gen) - 500) / 1000.0;
 			}
 		}
 		//W2,b1에 random값들 더해주기
 		for (int i = 0; i < 512; i++) {
 			for (int j = 0; j < 256; j++) {
-				W2(i, j) = W2(i, j) + ((float)dist(gen) - 500) / 1000.0;
+				W2(i, j) = W2(i, j) + ((double)dist(gen) - 500) / 1000.0;
+				dW2(i, j) = dW2(i, j) + ((double)dist(gen) - 500) / 1000.0;
 			}
-			b1(i) = b1(i) + ((float)dist(gen) - 500) / 1000.0;
+			b1(i) = b1(i) + ((double)dist(gen) - 500) / 1000.0;
+			db1(i) = db1(i) + ((double)dist(gen) - 500) / 1000.0;
 		}
 		//W3,b2에 random값들 더해주기
 		for (int i = 0; i < 256; i++) {
 			for (int j = 0; j < 128; j++) {
-				W3(i, j) = W3(i, j) + ((float)dist(gen) - 500) / 1000.0;
+				W3(i, j) = W3(i, j) + ((double)dist(gen) - 500) / 1000.0;
+				dW3(i, j) = dW3(i, j) + ((double)dist(gen) - 500) / 1000.0;
 			}
-			b2(i) = b2(i) + ((float)dist(gen) - 500) / 1000.0;
+			b2(i) = b2(i) + ((double)dist(gen) - 500) / 1000.0;
+			db2(i) = db2(i) + ((double)dist(gen) - 500) / 1000.0;
 		}
 		//W4, b3에 random값들 더해주기
 		for (int i = 0; i < 128; i++) {
 			for (int j = 0; j < 64; j++) {
-				W4(i, j) = W4(i, j) + ((float)dist(gen) - 500) / 1000.0;
+				W4(i, j) = W4(i, j) + ((double)dist(gen) - 500) / 1000.0;
+				dW4(i, j) = dW4(i, j) + ((double)dist(gen) - 500) / 1000.0;
 			}
-			b3(i) = b3(i) + ((float)dist(gen) - 500) / 1000.0;
+			b3(i) = b3(i) + ((double)dist(gen) - 500) / 1000.0;
+			db3(i) = db3(i) + ((double)dist(gen) - 500) / 1000.0;
 		}
 		//W5, b4에 random값들 더해주기
 		for (int i = 0; i < 64; i++) {
 			for (int j = 0; j < 10; j++) {
-				W5(i, j) = W5(i, j) + ((float)dist(gen) - 500) / 1000.0;
+				W5(i, j) = W5(i, j) + ((double)dist(gen) - 500) / 1000.0;
+				dW5(i, j) = dW5(i, j) + ((double)dist(gen) - 500) / 1000.0;
 			}
-			b4(i) = b4(i) + ((float)dist(gen) - 500) / 1000.0;
+			b4(i) = b4(i) + ((double)dist(gen) - 500) / 1000.0;
+			db4(i) = db4(i) + ((double)dist(gen) - 500) / 1000.0;
 		}
 
 		//b5에 random 값들 더해주기
 		for (int i = 0; i < 10; i++) {
-			b5(i) = b5(i) + ((float)dist(gen) - 500) / 1000.0;
+			b5(i) = b5(i) + ((double)dist(gen) - 500) / 1000.0;
+			db5(i) = db5(i) + ((double)dist(gen) - 500) / 1000.0;
 		}
+
+		cost = 0.0;
+
 	}
 
-	/*void ReLU( Eigen::MatrixXd& a ) {
-		for (int i = 0; i < a.rows(); i++) {
-			for (int j = 0; j < a.cols(); j++) {
-				if (a(i, j) < 0) {
-					a(i, j) = 0;
-				}
-			}
-		}
-	}*/
-
-	
-	////오호... 이게 맞는 것 같군
-	//void softmax(Eigen::MatrixXd& a) {
-	//	double sum = 0;
-	//	for (int i = 0; i < a.rows(); i++) {
-	//		for (int j = 0; j < a.cols(); j++) {
-	//			sum += exp(a(i, j));
-	//		}
-	//	}
-	//	for (int i = 0; i < a.rows(); i++) {
-	//		for (int j = 0; j < a.cols(); j++) {
-	//			a(i, j) = exp(a(i, j)) / sum;
-	//		}
-	//	}
-	//}
 
 	//return a6, w1,w2,w3,w4,w5,b1,b2,b3,b4,b5
-	std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-	Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> predict(Eigen::VectorXd x) {
+	std::tuple< int, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
+		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict(Eigen::VectorXd x) {
 
-		Eigen::MatrixXd z1, z2, z3, z4, z5, a1, a2, a3, a4, a5;
-		double digit;
+		Eigen::MatrixXd z1, z2, z3, z4, z5;
+		int digit;
 		z1 = W1 * x + b1;
 		a1 = relu.forward(z1);
 		z2 = W2 * a1 + b2;
@@ -370,102 +411,347 @@ public:
 		cout << a5 << endl;
 		cout << y_hat << endl;*/
 
+		/*cout << "a3 is " << endl << a3 << endl;
+		cout << "=========================" << endl;*/
+		//cout << "a4 is " << endl << a4 << endl;
+		//cout << "=========================" << endl;
+		//cout << "a5 is " << endl << a5 << endl;
+		//cout << "=========================" << endl;
+
 		/*cout << "=========================" << endl;
 		cout << " z4 is " << z4 << endl;
 		cout << "=========================" << endl;*/
 
-		return std::make_tuple(digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5,a5,max);
+		return std::make_tuple(digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5, a5, max);
+	}
+
+	void backward(Eigen::VectorXd& x, Eigen::VectorXd& Y) {
+
+		//cout << "===================backward start=====================" << endl;
+
+		Eigen::MatrixXd tmp;
+
+		//cout << "dW5 start" << endl;
+
+		//dW5, db5 계산
+		tmp = softmax.backward(a5, Y); //Y is 10x1 one hot encoding vector
+
+		/*cout << "a5 is " << a5 << endl << endl;
+		cout << "Y is " << Y << endl << endl;*/
+
+		//cout << "tmp is " << tmp << endl << endl;
+
+		dW5 += tmp * a4.transpose();
+		db5 += tmp;
+		tmp = W5.transpose() * tmp;
+
+		/*cout << "tmp is " << tmp << endl << endl;
+
+		cout << "dW5 end" << endl << endl;
+		cout << "dW4 start" << endl;*/
+
+		//dW4, db4 계산
+		relu.backward(tmp);
+		dW4 += tmp * a3.transpose();
+		db4 += tmp;
+		tmp = W4.transpose() * tmp;
+
+		/*cout << "tmp is " << tmp << endl << endl;
+
+		cout << "dW4 end" << endl << endl;
+		cout << "dW3 start" << endl;*/
+
+		//dW3, db3 계산
+		relu.backward(tmp);
+
+		//cout << "tmp is " << tmp << endl << endl;
+
+		dW3 += tmp * a2.transpose();
+		//cout << "dW3 is " << dW3 << endl << endl;
+
+		db3 += tmp;
+		tmp = W3.transpose() * tmp;
+
+		//cout << "tmp is " << tmp << endl << endl;
+
+		//cout << "dW3 end" << endl << endl;
+		//cout << "dW2 start" << endl;
+
+		//dW2, db2 계산
+		relu.backward(tmp);
+
+		/*cout << "tmp's row : " << tmp.rows() << endl << endl;
+		cout << "tmp's row : " << tmp.cols() << endl << endl;*/
+
+		dW2 += tmp * a1.transpose();
+
+		/*cout << "dW2's row " << dW2.rows() << endl << endl;
+		cout << "dW2's col " << dW2.cols() << endl << endl;*/
+
+		db2 += tmp;
+
+		tmp = W2.transpose() * tmp;
+
+		/*cout << "dW2 end" << endl << endl;
+		cout << "dW1 start" << endl;*/
+
+		//dW1, db1 계산
+		relu.backward(tmp);
+		dW1 += tmp * x.transpose();
+		db1 += tmp;
+
+		//cout << "===================backward end=====================" << endl;
+
+	}
+
+	void train(Eigen::MatrixXd& X, Eigen::VectorXd& Y, float lr, int N) {
+
+		double m = (double)N;
+
+		int epoch_size = 1000;
+
+		//10장당 1번 update
+		for (int epoch = 0; epoch < N / epoch_size; epoch++) {
+
+
+			cout << " epoch : " << epoch << endl;
+
+
+			//한 epoch당 100장씩 train
+			for (int i = epoch * epoch_size; i < epoch * epoch_size + epoch_size; i++) {
+
+
+
+				//cout << " iteration is " << i << endl;
+				//X의 각 row를 predict
+				Eigen::VectorXd x = X.row(i);
+				Eigen::VectorXd y;
+				y = Eigen::VectorXd(10);
+				for (int j = 0; j < 10; j++) {
+					if (j == (int)Y(i)) {
+						y(j) = 1;
+					}
+					else {
+						y(j) = 0;
+					}
+				}
+				//std::cout << "Y(i) is " << Y(i) << std::endl;
+				//std::cout << "y is " << endl << y << std::endl
+
+				//mtx.lock();
+
+				//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
+				std::tuple< int, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
+					Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict = this->predict(x);
+				//digit
+				int digit = std::get<0>(predict);
+				double y_hat = std::get<12>(predict);
+				Eigen::VectorXd one_vector_b5 = Eigen::VectorXd(10);
+				one_vector_b5.setOnes();
+
+				//loss 함수
+				cost -= 1 * log(y_hat);
+
+
+
+				this->backward(x, y);
+
+				//mtx.unlock();
+			}
+
+			//mtx.lock();
+
+			//update
+			double num = (epoch + 1) * epoch_size;
+			//double num = epoch_size;
+
+			this->cost /= num;
+			this->W1 -= lr * dW1 / num;
+			this->b1 -= lr * db1 / num;
+			this->W2 -= lr * dW2 / num;
+			this->b2 -= lr * db2 / num;
+			this->W3 -= lr * dW3 / num;
+			this->b3 -= lr * db3 / num;
+			this->W4 -= lr * dW4 / num;
+			this->b4 -= lr * db4 / num;
+			this->W5 -= lr * dW5 / num;
+			this->b5 -= lr * db5 / num;
+
+			cout << "cost is " << cost << endl;
+
+			//mtx.unlock();
+
+		}
+
 	}
 
 };
 
-double train(Eigen::MatrixXd X, Eigen::VectorXd Y, MLP& model, float lr, int N) {
-	//dW,db 선언 및 초기화
-	Eigen::MatrixXd dW1, dW2, dW3, dW4, dW5;
-	Eigen::VectorXd db1, db2, db3, db4, db5;
-	dW1 = Eigen::MatrixXd(512, 784);
-	dW2 = Eigen::MatrixXd(256, 512);
-	dW3 = Eigen::MatrixXd(128, 256);
-	dW4 = Eigen::MatrixXd(64, 128);
-	dW5 = Eigen::MatrixXd(10, 64);
-
-	db1 = Eigen::VectorXd(512);
-	db2 = Eigen::VectorXd(256);
-	db3 = Eigen::VectorXd(128);
-	db4 = Eigen::VectorXd(64);
-	db5 = Eigen::VectorXd(10);
-
-	//zero로 초기화하기
-	dW1.setZero();
-	dW2.setZero();
-	dW3.setZero();
-	dW4.setZero();
-	dW5.setZero();
-	db1.setZero();
-	db2.setZero();
-	db3.setZero();
-	db4.setZero();
-	db5.setZero();
-
-	double m = (double)N;
-	double cost = 0.0;
-
-	//100장당 1번 update
-	for (int epoch = 0; epoch < 600; epoch++) {
-		cout << " epoch : " << epoch << endl;
-
-		//한 epoch당 100장씩 train
-		for (int i = epoch * 100; i < epoch * 100 + 100; i++) {
-			//X의 각 row를 predict
-			Eigen::VectorXd x = X.row(i);
-
-			//std::cout << "x is " << x << std::endl;
-
-			//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
-			std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-				Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict = model.predict(x);
-			//digit
-			double digit = std::get<0>(predict);
-			double y_hat = std::get<12>(predict);
-			Eigen::VectorXd one_vector_b5 = Eigen::VectorXd(10);
-			one_vector_b5.setOnes();
-
-			//loss 함수
-			cost -= 1 * log(y_hat);
-
-			db5 = db5 + std::get<10>(predict) - one_vector_b5;
-			dW5 = dW5 + (digit - Y(i)) * std::get<9>(predict) * std::get<8>(predict) * std::get<7>(predict) * std::get<6>(predict).transpose();
-			db4 = db4 + (digit - Y(i)) * std::get<9>(predict) * std::get<8>(predict) * std::get<7>(predict);
-			dW4 = dW4 + (digit - Y(i)) * std::get<9>(predict) * std::get<8>(predict) * std::get<6>(predict).transpose();
-			db3 = db3 + (digit - Y(i)) * std::get<9>(predict) * std::get<7>(predict);
-			dW3 = dW3 + (digit - Y(i)) * std::get<9>(predict) * std::get<6>(predict).transpose();
-			db2 = db2 + (digit - Y(i)) * std::get<9>(predict);
-			dW2 = dW2 + (digit - Y(i)) * std::get<8>(predict) * std::get<7>(predict) * std::get<6>(predict).transpose();
-			db1 = db1 + (digit - Y(i)) * std::get<8>(predict) * std::get<7>(predict);
-			dW1 = dW1 + (digit - Y(i)) * std::get<8>(predict) * std::get<6>(predict).transpose();
-		}
-
-		//update
-		cost /= m;
-		model.W1 -= lr * dW1 / m;
-		model.b1 -= lr * db1 / m;
-		model.W2 -= lr * dW2 / m;
-		model.b2 -= lr * db2 / m;
-		
-
-	}
-
-
-	return cost;
-
-}
+////double train(Eigen::MatrixXd& X, Eigen::VectorXd& Y, MLP& model, float lr, int N) {
+//	////dW,db 선언 및 초기화
+//	//Eigen::MatrixXd dW1, dW2, dW3, dW4, dW5;
+//	//Eigen::VectorXd db1, db2, db3, db4, db5;
+//	/*dW1 = Eigen::MatrixXd(512, 784);
+//	dW2 = Eigen::MatrixXd(256, 512);
+//	dW3 = Eigen::MatrixXd(128, 256);
+//	dW4 = Eigen::MatrixXd(64, 128);
+//	dW5 = Eigen::MatrixXd(10, 64);
+//
+//	db1 = Eigen::VectorXd(512);
+//	db2 = Eigen::VectorXd(256);
+//	db3 = Eigen::VectorXd(128);
+//	db4 = Eigen::VectorXd(64);
+//	db5 = Eigen::VectorXd(10);*/
+//
+//	////zero로 초기화하기
+//	//dW1.setZero();
+//	//dW2.setZero();
+//	//dW3.setZero();
+//	//dW4.setZero();
+//	//dW5.setZero();
+//	//db1.setZero();
+//	//db2.setZero();
+//	//db3.setZero();
+//	//db4.setZero();
+//	//db5.setZero();
+//
+//	////random값 더해주기
+//	//	//난수 준비
+//	//std::random_device rd;
+//	//std::mt19937 gen(rd());
+//	//std::uniform_int_distribution<int> dist(0, 1000);
+//
+//	////W1에 random값들 더해주기
+//	//for (int i = 0; i < 784; i++) {
+//	//	for (int j = 0; j < 512; j++) {
+//	//		dW1(i, j) = dW1(i, j) + ((double)dist(gen) - 500) / 1000.0;
+//	//	}
+//	//}
+//	////W2,b1에 random값들 더해주기
+//	//for (int i = 0; i < 512; i++) {
+//	//	for (int j = 0; j < 256; j++) {
+//	//		dW2(i, j) = dW2(i, j) + ((double)dist(gen) - 500) / 1000.0;
+//	//	}
+//	//	db1(i) = db1(i) + ((double)dist(gen) - 500) / 1000.0;
+//	//}
+//	////W3,b2에 random값들 더해주기
+//	//for (int i = 0; i < 256; i++) {
+//	//	for (int j = 0; j < 128; j++) {
+//	//		dW3(i, j) = dW3(i, j) + ((double)dist(gen) - 500) / 1000.0;
+//	//	}
+//	//	db2(i) = db2(i) + ((double)dist(gen) - 500) / 1000.0;
+//	//}
+//	////W4, b3에 random값들 더해주기
+//	//for (int i = 0; i < 128; i++) {
+//	//	for (int j = 0; j < 64; j++) {
+//	//		dW4(i, j) = dW4(i, j) + ((double)dist(gen) - 500) / 1000.0;
+//	//	}
+//	//	db3(i) = db3(i) + ((double)dist(gen) - 500) / 1000.0;
+//	//}
+//	////W5, b4에 random값들 더해주기
+//	//for (int i = 0; i < 64; i++) {
+//	//	for (int j = 0; j < 10; j++) {
+//	//		dW5(i, j) = dW5(i, j) + ((double)dist(gen) - 500) / 1000.0;
+//	//	}
+//	//	db4(i) = db4(i) + ((double)dist(gen) - 500) / 1000.0;
+//	//}
+//
+//	////b5에 random 값들 더해주기
+//	//for (int i = 0; i < 10; i++) {
+//	//	db5(i) = db5(i) + ((double)dist(gen) - 500) / 1000.0;
+//	//}
+//
+//	//double m = (double)N;
+//	//double cost = 0.0;
+//
+//	//int epoch_size = 1000;
+//
+//	////10장당 1번 update
+//	//for (int epoch = 0; epoch < N / epoch_size; epoch++) {
+//
+//
+//	//	//cout << " epoch : " << epoch << endl;
+//	//	
+//
+//	//	//한 epoch당 100장씩 train
+//	//	for (int i = epoch * epoch_size; i < epoch * epoch_size + epoch_size; i++) {
+//
+//
+//
+//	//		//cout << " iteration is " << i << endl;
+//	//		//X의 각 row를 predict
+//	//		Eigen::VectorXd x = X.row(i);
+//	//		Eigen::VectorXd y;
+//	//		y = Eigen::VectorXd(10);
+//	//		for (int j = 0; j < 10; j++) {
+//	//			if (j == (int)Y(i)) {
+//	//				y(j) = 1;
+//	//			}
+//	//			else {
+//	//				y(j) = 0;
+//	//			}
+//	//		}
+//	//		//std::cout << "Y(i) is " << Y(i) << std::endl;
+//	//		//std::cout << "y is " << endl << y << std::endl
+//
+//	//		mtx.lock();
+//
+//	//		//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
+//	//		std::tuple< int, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
+//	//			Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict = model.predict(x);
+//	//		//digit
+//	//		int digit = std::get<0>(predict);
+//	//		double y_hat = std::get<12>(predict);
+//	//		Eigen::VectorXd one_vector_b5 = Eigen::VectorXd(10);
+//	//		one_vector_b5.setOnes();
+//
+//	//		//loss 함수
+//	//		cost -= 1 * log(y_hat);
+//
+//	//		
+//
+//	//		model.backward(dW1, dW2, dW3, dW4, dW5, db1, db2, db3, db4, db5, x, y);
+//
+//	//		mtx.unlock();
+//	//	}
+//
+//	//	mtx.lock();
+//
+//	//	//update
+//	//	double num = (epoch + 1) * epoch_size;
+//	//	//double num = epoch_size;
+//
+//	//	cost /= num;
+//	//	model.W1 -= lr * dW1 / num;
+//	//	model.b1 -= lr * db1 / num;
+//	//	model.W2 -= lr * dW2 / num;
+//	//	model.b2 -= lr * db2 / num;
+//	//	model.W3 -= lr * dW3 / num;
+//	//	model.b3 -= lr * db3 / num;
+//	//	model.W4 -= lr * dW4 / num;
+//	//	model.b4 -= lr * db4 / num;
+//	//	model.W5 -= lr * dW5 / num;
+//	//	model.b5 -= lr * db5 / num;
+//
+//	//	cout << "cost is " << cost << endl;
+//
+//	//	mtx.unlock();
+//
+//	//}
+//
+//
+//
+//	//return cost;
+//
+////}
 
 
 
 int main() {
+
     std::cout << "Hello OpenCV" << CV_VERSION << std::endl;
 
-	int DataNum = 300;
+	int DataNum = 60000;
 
     //read MNIST iamge into OpenCV Mat vector
     std::vector<cv::Mat> trainingVec;
@@ -519,33 +805,71 @@ int main() {
 
 	MLP model = MLP();
 
-	std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> result = model.predict(X.row(44));
+	cout << endl << "MNIST to Eigen Done" << endl;
 
-	//float cost = 0.0;
+	/*std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
+		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> result = model.predict(X.row(44));*/
 
-	//cout << endl << "MNIST to Eigen Done" << endl;
+	////멀티스레드 입문
+	//vector<thread> threads;
 
-	//cost = train(X, Y, model, 0.1, DataNum);
-	///*cost = train(X, Y, model, 0.1, DataNum);
-	//cost = train(X, Y, model, 0.1, DataNum);*/
+	//for (int i = 0; i < 6; i++) {
+	//	Eigen::MatrixXd x_tmp;
+	//	Eigen::VectorXd y_tmp;
+	//	x_tmp = Eigen::MatrixXd(10000,784);
+	//	y_tmp = Eigen::VectorXd(10000);
+	//	for (int j = 0; j < 10000; j++) {
+	//		for (int k = 0; k < 784; k++) {
+	//			x_tmp(j, k) = X(j,k);
+	//		}
+	//		y_tmp(j) = Y(i * 10000 + j);
+	//	}
 
-	//cout << endl << "Training Done" << endl;
+	//	threads.push_back(thread(&MLP::train, model, x_tmp, y_tmp, 0.4, 10000));
+	//}
+
+	//for (int i = 0; i < 6; i++) {
+	//	threads[i].join();
+	//}
+
+	model.train(X, Y, 0.4, DataNum);
+	/*cost = train(X, Y, model, 0.1, DataNum);
+	cost = train(X, Y, model, 0.1, DataNum);*/
+
+	cout << endl << "Training Done" << endl;
 
 
-	//cout << " test " << endl;
-	//cout << X.row(4728) << endl;
-	//cout << get<0>(model.predict(X.row(4728))) << endl;
+	cout << " test1 " << endl;
+	cout << "answer is " << Y(255) << endl;
+	cout << X.row(255) << endl;
+	cout << " predict is " << get<0>(model.predict(X.row(255))) << endl;
 
-
-
-	cout << get<0>(result) << endl; //y_hat
+	cout << get<11>(model.predict(X.row(255))) << endl; //a5
+	cout << get<12>(model.predict(X.row(255))) << endl; //y_hat
 	cout << "==============" << endl;
-	cout << get<10>(result) << endl; //b5
+
+	cout << " test2 " << endl;
+	cout << "answer is " << Y(912) << endl;
+	cout << X.row(912) << endl;
+	cout << " predict is " << get<0>(model.predict(X.row(912))) << endl;
+
+	cout << get<11>(model.predict(X.row(912))) << endl; //a5
+	cout << get<12>(model.predict(X.row(912))) << endl; //y_hat
 	cout << "==============" << endl;
-	cout << get<5>(result) << endl; //W5
+
+	cout << " test " << endl;
+	cout << "answer is " << Y(30001) << endl;
+	cout << X.row(30001) << endl;
+	cout << " predict is " << get<0>(model.predict(X.row(30001))) << endl;
+
+	cout << get<11>(model.predict(X.row(30001))) << endl; //a5
+	cout << get<12>(model.predict(X.row(30001))) << endl; //y_hat
 	cout << "==============" << endl;
-	cout << get<11>(result) << endl; //a5
+	//cout << get<10>(result) << endl; //b5
+	//cout << "==============" << endl;
+	//cout << get<5>(result) << endl; //W5
+	//cout << "==============" << endl;
+	//cout << get<11>(result) << endl; //a5
 	//cout << "==============" << endl;
 	//cout << get<11>(result)(8,0) << endl; //a5
 	//cout << "==============" << endl;

@@ -20,7 +20,7 @@
 using namespace std;
 using namespace cv;
 
-//std::mutex mtx;
+std::mutex mtx;
 
 int ReverseInt(int i)
 {
@@ -521,7 +521,6 @@ public:
 			for (int i = epoch * epoch_size; i < epoch * epoch_size + epoch_size; i++) {
 
 
-
 				//cout << " iteration is " << i << endl;
 				//X의 각 row를 predict
 				Eigen::VectorXd x = X.row(i);
@@ -538,7 +537,9 @@ public:
 				//std::cout << "Y(i) is " << Y(i) << std::endl;
 				//std::cout << "y is " << endl << y << std::endl
 
-				//mtx.lock();
+				mtx.lock();
+
+				//cout << "mutex lock" << endl;
 
 				//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
 				std::tuple< int, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
@@ -556,10 +557,14 @@ public:
 
 				this->backward(x, y);
 
-				//mtx.unlock();
+				mtx.unlock();
+
+				//cout << "mutex unlock" << endl;
 			}
 
-			//mtx.lock();
+			mtx.lock();
+
+			//cout << "mutex lock" << endl;
 
 			//update
 			double num = (epoch + 1) * epoch_size;
@@ -579,8 +584,9 @@ public:
 
 			cout << "cost is " << cost << endl;
 
-			//mtx.unlock();
+			mtx.unlock();
 
+			//cout << "mutex unlock" << endl;
 		}
 
 	}
@@ -810,29 +816,38 @@ int main() {
 	/*std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
 		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> result = model.predict(X.row(44));*/
 
-	////멀티스레드 입문
-	//vector<thread> threads;
+	//멀티스레드 입문
+	vector<thread> threads;
 
-	//for (int i = 0; i < 6; i++) {
-	//	Eigen::MatrixXd x_tmp;
-	//	Eigen::VectorXd y_tmp;
-	//	x_tmp = Eigen::MatrixXd(10000,784);
-	//	y_tmp = Eigen::VectorXd(10000);
-	//	for (int j = 0; j < 10000; j++) {
-	//		for (int k = 0; k < 784; k++) {
-	//			x_tmp(j, k) = X(j,k);
-	//		}
-	//		y_tmp(j) = Y(i * 10000 + j);
-	//	}
+	vector<Eigen::MatrixXd> vec_tmp_X;
+	vector<Eigen::VectorXd> vec_tmp_Y;
 
-	//	threads.push_back(thread(&MLP::train, model, x_tmp, y_tmp, 0.4, 10000));
-	//}
+	for (int i = 0; i < 6; i++) {
+		Eigen::MatrixXd x_tmp;
+		Eigen::VectorXd y_tmp;
+		x_tmp = Eigen::MatrixXd(10000,784);
+		y_tmp = Eigen::VectorXd(10000);
+		for (int j = 0; j < 10000; j++) {
+			for (int k = 0; k < 784; k++) {
+				x_tmp(j, k) = X(j,k);
+			}
+			y_tmp(j) = Y(i * 10000 + j);
+		}
 
-	//for (int i = 0; i < 6; i++) {
-	//	threads[i].join();
-	//}
+		vec_tmp_X.push_back(x_tmp);
+		vec_tmp_Y.push_back(y_tmp);
 
-	model.train(X, Y, 0.4, DataNum);
+	}
+
+	for (int i = 0; i < 6; i++) {
+		threads.push_back(thread(&MLP::train, ref(model), ref(vec_tmp_X[i]), ref(vec_tmp_Y[i]), 0.4, 10000));
+	}
+
+	for (int i = 0; i < 6; i++) {
+		threads[i].join();
+	}
+
+	/*model.train(X, Y, 0.4, DataNum);*/
 	/*cost = train(X, Y, model, 0.1, DataNum);
 	cost = train(X, Y, model, 0.1, DataNum);*/
 

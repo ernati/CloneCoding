@@ -20,7 +20,7 @@
 using namespace std;
 using namespace cv;
 
-std::mutex mtx;
+//std::mutex mtx;
 
 int ReverseInt(int i)
 {
@@ -197,10 +197,18 @@ public:
 		return a;
 	}
 	
+	//Soft-with-loss
 	//one-hot encoding vector - a5
-	Eigen::MatrixXd backward(Eigen::MatrixXd& a, Eigen::VectorXd& label) {
+	Eigen::MatrixXd backward(Eigen::MatrixXd& a, Eigen::VectorXd& label, double epochsize) {
 		double sum = 0;
 		Eigen::MatrixXd z = label - a;
+		z = z / epochsize;
+
+		//cout << "z before is " << endl << z << endl;
+
+
+
+		//cout << "z after is " << endl << z << endl;
 		
 		return z;
 	}
@@ -425,7 +433,7 @@ public:
 		return std::make_tuple(digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5, a5, max);
 	}
 
-	void backward(Eigen::VectorXd& x, Eigen::VectorXd& Y) {
+	void backward(Eigen::VectorXd& x, Eigen::VectorXd& Y, double epochsize) {
 
 		//cout << "===================backward start=====================" << endl;
 
@@ -434,7 +442,7 @@ public:
 		//cout << "dW5 start" << endl;
 
 		//dW5, db5 계산
-		tmp = softmax.backward(a5, Y); //Y is 10x1 one hot encoding vector
+		tmp = softmax.backward(a5, Y, epochsize); //Y is 10x1 one hot encoding vector
 
 		/*cout << "a5 is " << a5 << endl << endl;
 		cout << "Y is " << Y << endl << endl;*/
@@ -504,90 +512,120 @@ public:
 
 	}
 
-	void train(Eigen::MatrixXd& X, Eigen::VectorXd& Y, float lr, int N) {
+	void train(int epoch, int batch_size, Eigen::MatrixXd& X, Eigen::VectorXd& Y, float lr, int N) {
 
 		double m = (double)N;
 
-		int epoch_size = 1000;
+		for (int epoch_n = 0; epoch_n < epoch; epoch_n++) {
 
-		//10장당 1번 update
-		for (int epoch = 0; epoch < N / epoch_size; epoch++) {
+			cout << "epoch : " << epoch_n << endl;
 
-
-			cout << " epoch : " << epoch << endl;
-
-
-			//한 epoch당 100장씩 train
-			for (int i = epoch * epoch_size; i < epoch * epoch_size + epoch_size; i++) {
+			//10장당 1번 update
+			for (int iteration = 0; iteration < N / batch_size; iteration++) {
 
 
-				//cout << " iteration is " << i << endl;
-				//X의 각 row를 predict
-				Eigen::VectorXd x = X.row(i);
-				Eigen::VectorXd y;
-				y = Eigen::VectorXd(10);
-				for (int j = 0; j < 10; j++) {
-					if (j == (int)Y(i)) {
-						y(j) = 1;
+				cout << " iteration : " << iteration << endl;
+
+
+				//한 iteration당 100장씩 train
+				for (int i = iteration * batch_size; i < iteration * batch_size + batch_size; i++) {
+
+					//zero_grad
+					//zero로 초기화하기
+					dW1.setZero();
+					dW2.setZero();
+					dW3.setZero();
+					dW4.setZero();
+					dW5.setZero();
+					db1.setZero();
+					db2.setZero();
+					db3.setZero();
+					db4.setZero();
+					db5.setZero();
+
+
+					//cout << " iteration is " << i << endl;
+					//X의 각 row를 predict
+					Eigen::VectorXd x = X.row(i);
+					Eigen::VectorXd y;
+					y = Eigen::VectorXd(10);
+					for (int j = 0; j < 10; j++) {
+						if (j == (int)Y(i)) {
+							y(j) = 1;
+						}
+						else {
+							y(j) = 0;
+						}
 					}
-					else {
-						y(j) = 0;
-					}
+					//std::cout << "Y(i) is " << Y(i) << std::endl;
+					//std::cout << "y is " << endl << y << std::endl
+
+					//mtx.lock();
+
+					//cout << "mutex lock" << endl;
+
+					//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
+					std::tuple< int, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
+						Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict = this->predict(x);
+					//digit
+					int digit = std::get<0>(predict);
+					Eigen::VectorXd y_hat = std::get<11>(predict);
+					double max = y_hat.maxCoeff();
+
+
+					// y * log(y^) 이지만, 정답을 빼곤 모두 y값이 0이므로 간략화
+					cost -= 1 * log(max);
+
+
+					this->backward(x, y, (double)batch_size);
+
+					//mtx.unlock();
+
+					//cout << "mutex unlock" << endl;
 				}
-				//std::cout << "Y(i) is " << Y(i) << std::endl;
-				//std::cout << "y is " << endl << y << std::endl
 
-				mtx.lock();
+				//mtx.lock();
 
 				//cout << "mutex lock" << endl;
 
-				//digit, W1, W2, W3, W4, W5, b1, b2, b3, b4, b5 
-				std::tuple< int, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
-					Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd, double> predict = this->predict(x);
-				//digit
-				int digit = std::get<0>(predict);
-				double y_hat = std::get<12>(predict);
-				Eigen::VectorXd one_vector_b5 = Eigen::VectorXd(10);
-				one_vector_b5.setOnes();
+				//update
+				double num_all = (epoch_n) * m + (iteration + 1) * batch_size;
+				double num = (double)batch_size;
 
-				//loss 함수
-				cost -= 1 * log(y_hat);
+				cout << "the number of trained data is " << num_all << endl;
 
+				//this->cost /= num_all;
+				this->W1 -= lr * dW1 / num;
+				this->b1 -= lr * db1 / num;
+				this->W2 -= lr * dW2 / num;
+				this->b2 -= lr * db2 / num;
+				this->W3 -= lr * dW3 / num;
+				this->b3 -= lr * db3 / num;
+				this->W4 -= lr * dW4 / num;
+				this->b4 -= lr * db4 / num;
+				this->W5 -= lr * dW5 / num;
+				this->b5 -= lr * db5 / num;
 
+				cout << "cost is " << cost / num_all << endl;
 
-				this->backward(x, y);
-
-				mtx.unlock();
+				//mtx.unlock();
 
 				//cout << "mutex unlock" << endl;
 			}
 
-			mtx.lock();
-
-			//cout << "mutex lock" << endl;
-
-			//update
-			double num = (epoch + 1) * epoch_size;
-			//double num = epoch_size;
-
-			this->cost /= num;
-			this->W1 -= lr * dW1 / num;
-			this->b1 -= lr * db1 / num;
-			this->W2 -= lr * dW2 / num;
-			this->b2 -= lr * db2 / num;
-			this->W3 -= lr * dW3 / num;
-			this->b3 -= lr * db3 / num;
-			this->W4 -= lr * dW4 / num;
-			this->b4 -= lr * db4 / num;
-			this->W5 -= lr * dW5 / num;
-			this->b5 -= lr * db5 / num;
-
-			cout << "cost is " << cost << endl;
-
-			mtx.unlock();
-
-			//cout << "mutex unlock" << endl;
+			/*cout << "W1 is" << endl << W1 << endl << endl;
+			cout << "b1 is" << endl << b1 << endl << endl;
+			cout << "W2 is" << endl << W2 << endl << endl;
+			cout << "b2 is" << endl << b2 << endl << endl;*/	
+			cout << "W3 is" << endl << W3 << endl << endl;
+			cout << "b3 is" << endl << b3 << endl << endl;
+			cout << "W4 is" << endl << W4 << endl << endl;
+			cout << "b4 is" << endl << b4 << endl << endl;
+			cout << "W5 is" << endl << W5 << endl << endl;
+			cout << "b5 is" << endl << b5 << endl << endl;
+			
 		}
+
 
 	}
 
@@ -803,7 +841,7 @@ int main() {
 	//trainingVec의 60000개, 각 1개는 28 * 28
 	for (int i = 0; i < DataNum; i++) {
 		for (int j = 0; j < 784; j++) {
-			X(i, j) = (double)(int)trainingVec[i].at<uchar>(j / 28, j % 28);  // 가장 중요한 부분!
+			X(i, j) = (double)(int)trainingVec[i].at<uchar>(j / 28, j % 28) / 255.0 ;  // 가장 중요한 부분!
 		}
 
 		Y(i) = (double)(int)labelVec[i];
@@ -816,38 +854,40 @@ int main() {
 	/*std::tuple< double, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd, Eigen::MatrixXd,
 		Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::VectorXd, Eigen::MatrixXd,double> result = model.predict(X.row(44));*/
 
-	//멀티스레드 입문
-	vector<thread> threads;
+	////멀티스레드 입문
+	//vector<thread> threads;
 
-	vector<Eigen::MatrixXd> vec_tmp_X;
-	vector<Eigen::VectorXd> vec_tmp_Y;
+	//vector<Eigen::MatrixXd> vec_tmp_X;
+	//vector<Eigen::VectorXd> vec_tmp_Y;
 
-	for (int i = 0; i < 6; i++) {
-		Eigen::MatrixXd x_tmp;
-		Eigen::VectorXd y_tmp;
-		x_tmp = Eigen::MatrixXd(10000,784);
-		y_tmp = Eigen::VectorXd(10000);
-		for (int j = 0; j < 10000; j++) {
-			for (int k = 0; k < 784; k++) {
-				x_tmp(j, k) = X(j,k);
-			}
-			y_tmp(j) = Y(i * 10000 + j);
-		}
+	//for (int i = 0; i < 6; i++) {
+	//	Eigen::MatrixXd x_tmp;
+	//	Eigen::VectorXd y_tmp;
+	//	x_tmp = Eigen::MatrixXd(10000,784);
+	//	y_tmp = Eigen::VectorXd(10000);
+	//	for (int j = 0; j < 10000; j++) {
+	//		for (int k = 0; k < 784; k++) {
+	//			x_tmp(j, k) = X(j,k);
+	//		}
+	//		y_tmp(j) = Y(i * 10000 + j);
+	//	}
 
-		vec_tmp_X.push_back(x_tmp);
-		vec_tmp_Y.push_back(y_tmp);
+	//	vec_tmp_X.push_back(x_tmp);
+	//	vec_tmp_Y.push_back(y_tmp);
 
-	}
+	//}
 
-	for (int i = 0; i < 6; i++) {
-		threads.push_back(thread(&MLP::train, ref(model), ref(vec_tmp_X[i]), ref(vec_tmp_Y[i]), 0.4, 10000));
-	}
+	//for (int i = 0; i < 6; i++) {
+	//	threads.push_back(thread(&MLP::train, ref(model), ref(vec_tmp_X[i]), ref(vec_tmp_Y[i]), 0.4, 10000));
+	//}
 
-	for (int i = 0; i < 6; i++) {
-		threads[i].join();
-	}
+	//for (int i = 0; i < 6; i++) {
+	//	threads[i].join();
+	//}
+	int epoch = 4;
+	int batch_size = 60000;
 
-	/*model.train(X, Y, 0.4, DataNum);*/
+	model.train(epoch, batch_size, X, Y, 0.1, DataNum);
 	/*cost = train(X, Y, model, 0.1, DataNum);
 	cost = train(X, Y, model, 0.1, DataNum);*/
 

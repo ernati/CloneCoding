@@ -50,3 +50,40 @@ def train(args, data_loader, model) :
         print('train_accuracy : {:.3f}'.format(epoch_train_acc*100))
 
         torch.save(model.state_dict(), f'{args.save_path}/model.pth')
+
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='2023 DL Term Project')
+    parser.add_argument('--save-path', default='checkpoints/', help="Model's state_dict")
+    parser.add_argument('--data', default='data/', type=str, help='data folder')
+    args = parser.parse_args()
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    args.device = device
+
+
+# hyper parameters
+args.epochs = 6
+args.learning_rate = 0.001
+args.batch_size = 64
+
+# check settings
+print("==============================")
+print("Save path:", args.save_path)
+print('Using Device:', device)
+print('Number of usable GPUs:', torch.cuda.device_count())
+
+# Print Hyperparameter
+print("Batch_size:", args.batch_size)
+print("learning_rate:", args.learning_rate)
+print("Epochs:", args.epochs)
+print("==============================")
+
+model = ResNet18()
+model.to(device)
+
+train_loader, valid_loader, _, train_total_loader = make_data_loader_CIFAR10(args)
+
+train(args, train_total_loader, model)
+
